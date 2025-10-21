@@ -1,0 +1,170 @@
+[
+  {
+    "name": "Apichi Content Delivery",
+    "nodes": [
+      {
+        "parameters": {
+          "operation": "list",
+          "application": "",
+          "table": "Lessons",
+          "triggerOn": "newRecordInView",
+          "viewId": "Ready for Delivery"
+        },
+        "name": "Airtable Trigger",
+        "type": "n8n-nodes-base.airtableTrigger",
+        "typeVersion": 1,
+        "position": [0, 0],
+        "credentials": {
+          "airtableApi": {
+            "id": "YOUR_AIRTABLE_CREDENTIAL_ID",
+            "name": "YOUR_AIRTABLE_CREDENTIAL_NAME"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "functionCode": "// Format message and inline keyboard\nconst checklist = $json['Checklist Items'].split(',').map(item => item.trim());\nconst inlineKeyboard = checklist.map(item => [{ text: item, callback_data: `${$json['Airtable Record ID']}|${item}` }]);\nconst message = `*New Lesson Plan Ready!* ✨\n\n*Topic:* ${$json['Lesson Title']}\n---\n*📄 Lesson Plan:*\n${$json['Lesson Plan Content']}\n---\n*🗣️ Teaching Script:*\n${$json['Teaching Script']}\n---\n*✅ Your Checklist for Today:*`;\nreturn [{ json: { chatId: $json['Teacher Telegram Chat ID'], message, keyboard: { inline_keyboard: inlineKeyboard } } }];"
+        },
+        "name": "Format Telegram Message",
+        "type": "n8n-nodes-base.function",
+        "typeVersion": 1,
+        "position": [250, 0]
+      },
+      {
+        "parameters": {
+          "chatId": "={{ $json['chatId'] }}",
+          "text": "={{ $json['message'] }}",
+          "additionalFields": {
+            "replyMarkup": "={{ JSON.stringify($json['keyboard']) }}"
+          }
+        },
+        "name": "Send Lesson",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1,
+        "position": [500, 0],
+        "credentials": {
+          "telegramApi": {
+            "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+            "name": "YOUR_TELEGRAM_CREDENTIAL_NAME"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Airtable Trigger": {
+        "main": [
+          [
+            {
+              "node": "Format Telegram Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Telegram Message": {
+        "main": [
+          [
+            {
+              "node": "Send Lesson",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false
+  },
+  {
+    "name": "Apichi Checklist Tracking",
+    "nodes": [
+      {
+        "parameters": {
+          "path": "apichi-checklist",
+          "httpMethod": "POST"
+        },
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [0, 300]
+      },
+      {
+        "parameters": {
+          "functionCode": "// Parse callback data\nconst data = $json.body.callback_query.data;\nconst [recordId, item] = data.split('|');\nconst callbackId = $json.body.callback_query.id;\nreturn [{ json: { recordId, item, callbackId } }];"
+        },
+        "name": "Parse Callback",
+        "type": "n8n-nodes-base.function",
+        "typeVersion": 1,
+        "position": [250, 300]
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "base": "Apichi Content Hub",
+          "table": "Lessons",
+          "recordId": "={{ $json['recordId'] }}",
+          "updateFields": {
+            "Completed Tasks": "={{ ($json['Completed Tasks'] || '') + $json['item'] + '\n' }}"
+          }
+        },
+        "name": "Update Task List",
+        "type": "n8n-nodes-base.airtable",
+        "typeVersion": 1,
+        "position": [500, 300],
+        "credentials": {
+          "airtableApi": {
+            "id": "YOUR_AIRTABLE_CREDENTIAL_ID",
+            "name": "YOUR_AIRTABLE_CREDENTIAL_NAME"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "callbackQueryId": "={{ $node['Parse Callback'].json['callbackId'] }}",
+          "text": "Task marked as complete! 👍"
+        },
+        "name": "Confirm Callback",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1,
+        "position": [750, 300],
+        "credentials": {
+          "telegramApi": {
+            "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+            "name": "YOUR_TELEGRAM_CREDENTIAL_NAME"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Parse Callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Callback": {
+        "main": [
+          [
+            {
+              "node": "Update Task List",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Confirm Callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false
+  }
+]
